@@ -5,7 +5,8 @@
   const ctx = canvas.getContext("2d", { alpha: true });
 
   // Respect reduced motion
-  const reduceMotion = window.matchMedia &&
+  const reduceMotion =
+    window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   let w = 0, h = 0, dpr = 1;
@@ -24,116 +25,154 @@
   window.addEventListener("resize", resize, { passive: true });
   resize();
 
-  // --- Build a jittered grid in 3D (z adds “manifold” depth) ---
-  const cols = 28;
-  const rows = 18;
-  const points = [];
-  const base = [];
+  // ---------- Torus mesh setup ----------
+  const segU = 64; // around the donut
+  const segV = 24; // around the tube
 
-  // 3D helpers
-  const rand = (a, b) => a + Math.random() * (b - a);
+  // Base torus radii (in "scene units")
+  const R = 1.05; // major radius
+  const r0 = 0.42; // minor radius
 
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const nx = (x / (cols - 1)) * 2 - 1; // -1..1
-      const ny = (y / (rows - 1)) * 2 - 1;
-      // Start as a plane, then “warp” it
-      const px = nx * 1.25;
-      const py = ny * 0.8;
-      const pz =
-        0.35 * Math.sin(nx * 2.6) +
-        0.35 * Math.cos(ny * 2.2) +
-        0.20 * Math.sin((nx + ny) * 3.1);
+  // Build param grid indices
+  const points = new Array(segU * segV);
+  const baseUV = new Array(segU * segV);
 
-      const jx = rand(-0.03, 0.03);
-      const jy = rand(-0.03, 0.03);
-      const jz = rand(-0.04, 0.04);
+  const idx = (u, v) => (v * segU + u);
 
-      base.push({ x: px + jx, y: py + jy, z: pz + jz });
-      points.push({ x: px + jx, y: py + jy, z: pz + jz });
+  for (let v = 0; v < segV; v++) {
+    for (let u = 0; u < segU; u++) {
+      const U = (u / segU) * Math.PI * 2;
+      const V = (v / segV) * Math.PI * 2;
+      baseUV[idx(u, v)] = { U, V };
+      points[idx(u, v)] = { x: 0, y: 0, z: 0 };
     }
   }
 
-  // Edge list (grid neighbors)
+  // Create edges (wrap around)
   const edges = [];
-  const idx = (x, y) => y * cols + x;
+  for (let v = 0; v < segV; v++) {
+    for (let u = 0; u < segU; u++) {
+      const u1 = (u + 1) % segU;
+      const v1 = (v + 1) % segV;
 
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      if (x + 1 < cols) edges.push([idx(x, y), idx(x + 1, y)]);
-      if (y + 1 < rows) edges.push([idx(x, y), idx(x, y + 1)]);
-      // a few diagonals for “mesh” feel
-      if (x + 1 < cols && y + 1 < rows && (x + y) % 3 === 0)
-        edges.push([idx(x, y), idx(x + 1, y + 1)]);
+      edges.push([idx(u, v), idx(u1, v)]);  // along U
+      edges.push([idx(u, v), idx(u, v1)]);  // along V
+
+      // occasional diagonals for extra mesh vibe
+      if ((u + v) % 5 === 0) edges.push([idx(u, v), idx(u1, v1)]);
     }
   }
 
-  // Project 3D to 2D
-  function project(p, rotY, rotX) {
-    // rotate around Y
-    const cy = Math.cos(rotY), sy = Math.sin(rotY);
-    let x = p.x * cy + p.z * sy;
-    let z = -p.x * sy + p.z * cy;
-
-    // rotate around X
-    const cx = Math.cos(rotX), sx = Math.sin(rotX);
-    let y = p.y * cx - z * sx;
-    z = p.y * sx + z * cx;
-
-    // perspective
-    const camera = 2.7;           // distance
-    const depth = camera / (camera + z);
-    const sx2 = (x * depth) * (Math.min(w, h) * 0.42) + w * 0.5;
-    const sy2 = (y * depth) * (Math.min(w, h) * 0.42) + h * 0.5;
-    return { x: sx2, y: sy2, z };
+  // ---------- 3D helpers ----------
+  function rotateY(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x * c + p.z * s, y: p.y, z: -p.x * s + p.z * c };
   }
 
-  function draw(t) {
-    // background clear (keep it subtle)
+  function rotateX(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x, y: p.y * c - p.z * s, z: p.y * s + p.z * c };
+  }
+
+  function rotateZ(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return { x: p.x * c - p.y * s, y: p.x * s + p.y * c, z: p.z };
+  }
+
+  function project(p) {
+    // perspective projection
+    const camera = 3.0;
+    const depth = camera / (camera + p.z);
+    const scale = Math.min(w, h) * 0.38;
+
+    return {
+      x: p.x * depth * scale + w * 0.5,
+      y: p.y * depth * scale + h * 0.5,
+      z: p.z
+    };
+  }
+
+  // ---------- Render loop ----------
+  // 1 RPM = 2π radians per 60 seconds
+  const omega = (Math.PI * 2) / 60;
+
+  function draw(ts) {
     ctx.clearRect(0, 0, w, h);
 
-    // subtle vignette / fog
-    const grad = ctx.createRadialGradient(w * 0.5, h * 0.35, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
-    grad.addColorStop(0, "rgba(255,255,255,0.05)");
-    grad.addColorStop(1, "rgba(0,0,0,0.35)");
+    // subtle grayscale fog/vignette
+    const grad = ctx.createRadialGradient(
+      w * 0.5, h * 0.35, 0,
+      w * 0.5, h * 0.5, Math.max(w, h) * 0.75
+    );
+    grad.addColorStop(0, "rgba(255,255,255,0.055)");
+    grad.addColorStop(1, "rgba(0,0,0,0.40)");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    const time = t * 0.001;
+    const t = ts * 0.001; // seconds
 
-    const rotY = 0.35 + Math.sin(time * 0.22) * 0.15;
-    const rotX = 0.12 + Math.cos(time * 0.18) * 0.10;
+    // Exactly 1 RPM rotation (about Y)
+    const rotY = omega * t;
 
-    // animate the surface slightly (“breathing” manifold)
+    // Slow additional wobble so it feels alive (subtle!)
+    const wobX = 0.18 + Math.sin(t * 0.12) * 0.08;
+    const wobZ = -0.12 + Math.cos(t * 0.10) * 0.06;
+
+    // Bending / breathing:
+    // - minor radius pulses
+    // - a gentle "bend" along the major ring (adds that manifold feel)
+    const pulse = 1.0 + 0.10 * Math.sin(t * 0.6); // breathing
+    const bendAmt = 0.18 + 0.05 * Math.sin(t * 0.22); // slow bend
+
+    // Update points in 3D
     for (let i = 0; i < points.length; i++) {
-      const b = base[i];
-      points[i].x = b.x;
-      points[i].y = b.y;
-      points[i].z = b.z + 0.08 * Math.sin(time * 0.9 + b.x * 3.0 + b.y * 2.0);
+      const { U, V } = baseUV[i];
+
+      // tube radius varies slightly along U and time
+      const r = r0 * pulse * (1.0 + 0.07 * Math.sin(3 * U + t * 0.9));
+
+      // base torus
+      let x = (R + r * Math.cos(V)) * Math.cos(U);
+      let z = (R + r * Math.cos(V)) * Math.sin(U);
+      let y = r * Math.sin(V);
+
+      // add a gentle bend: push y and z a bit based on U (and time)
+      // feels like the torus is flexing rather than perfectly rigid
+      y += bendAmt * 0.35 * Math.sin(U + t * 0.25);
+      z += bendAmt * 0.25 * Math.cos(2 * U - t * 0.2);
+
+      // apply global rotations
+      let p = { x, y, z };
+      p = rotateY(p, rotY);
+      p = rotateX(p, wobX);
+      p = rotateZ(p, wobZ);
+
+      points[i].x = p.x;
+      points[i].y = p.y;
+      points[i].z = p.z;
     }
 
-    // pre-project points
+    // Project points, track depth for nice fading
     const proj = new Array(points.length);
     let zmin = Infinity, zmax = -Infinity;
 
     for (let i = 0; i < points.length; i++) {
-      const p2 = project(points[i], rotY, rotX);
+      const p2 = project(points[i]);
       proj[i] = p2;
       zmin = Math.min(zmin, p2.z);
       zmax = Math.max(zmax, p2.z);
     }
 
-    // draw lines
+    // Draw mesh lines
     ctx.lineWidth = 1;
 
     for (let e = 0; e < edges.length; e++) {
       const a = proj[edges[e][0]];
       const b = proj[edges[e][1]];
 
-      // fade with depth (closer = brighter)
       const z = (a.z + b.z) * 0.5;
       const zn = (z - zmin) / (zmax - zmin + 1e-6); // 0..1
-      const alpha = 0.10 + (1 - zn) * 0.22;
+      const alpha = 0.08 + (1 - zn) * 0.26;
 
       ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
       ctx.beginPath();
@@ -142,12 +181,13 @@
       ctx.stroke();
     }
 
-    // optional: a few “highlight” points
-    for (let i = 0; i < proj.length; i += 19) {
+    // A few faint “spark” points for depth cues
+    for (let i = 0; i < proj.length; i += 37) {
       const p = proj[i];
       const zn = (p.z - zmin) / (zmax - zmin + 1e-6);
-      const r = 1.2 + (1 - zn) * 1.2;
-      const a = 0.05 + (1 - zn) * 0.10;
+      const r = 1.0 + (1 - zn) * 1.4;
+      const a = 0.04 + (1 - zn) * 0.11;
+
       ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -155,11 +195,11 @@
     }
   }
 
-  function loop(t) {
-    draw(t);
+  function loop(ts) {
+    draw(ts);
     if (!reduceMotion) requestAnimationFrame(loop);
   }
 
   if (!reduceMotion) requestAnimationFrame(loop);
-  else draw(0); // static frame if reduced motion
+  else draw(0);
 })();

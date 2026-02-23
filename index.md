@@ -1,9 +1,7 @@
 ---
 layout: page
-title: PrimeWiki
+title: Prime Wiki Home
 ---
-
-# Prime Wiki Home
 
 - Mersenne Primes
 - Emirps

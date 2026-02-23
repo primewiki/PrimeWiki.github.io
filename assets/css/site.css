@@ -1,80 +1,101 @@
-:root {
-  --bg: #0b0f19;
-  --card: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.12);
-  --text: rgba(255, 255, 255, 0.92);
-  --muted: rgba(255, 255, 255, 0.72);
+:root{
+  --bg0: #0f1115;
+  --bg1: #161a20;
+  --ink: #0b0d10;
+  --muted: #3b4048;
+  --card: #ffffff;
+  --cardBorder: rgba(10, 12, 16, 0.10);
+  --shadow: 0 24px 70px rgba(0,0,0,0.28);
 }
 
-html, body {
-  height: 100%;
-}
+html, body { height: 100%; }
 
-body {
+body{
   margin: 0;
-  color: var(--text);
-  background: radial-gradient(1200px 600px at 20% 10%, rgba(80, 120, 255, 0.18), transparent 60%),
-              radial-gradient(900px 500px at 80% 30%, rgba(255, 80, 180, 0.14), transparent 60%),
-              var(--bg);
+  color: var(--ink);
+  background: radial-gradient(1200px 700px at 20% 10%, rgba(255,255,255,0.08), transparent 55%),
+              radial-gradient(900px 600px at 80% 25%, rgba(255,255,255,0.06), transparent 60%),
+              linear-gradient(180deg, var(--bg0), var(--bg1));
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.6;
+  line-height: 1.65;
 }
 
-.page-wrap {
+/* Full-screen canvas behind content */
+#bg{
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Page wrapper */
+.page-wrap{
+  position: relative;
+  z-index: 1;
   min-height: 100vh;
   display: grid;
   place-items: start center;
-  padding: 48px 16px;
+  padding: 52px 16px;
 }
 
-.page-card {
-  width: min(900px, 100%);
+/* The floating “paper” */
+.page-card{
+  width: min(920px, 100%);
   background: var(--card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--cardBorder);
   border-radius: 18px;
-  padding: 28px 26px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 18px 55px rgba(0,0,0,0.45);
+  padding: 30px 28px;
+  box-shadow: var(--shadow);
   transform: translateY(0);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
-.page-card:hover {
+.page-card:hover{
   transform: translateY(-6px);
-  border-color: rgba(255,255,255,0.18);
-  box-shadow: 0 26px 80px rgba(0,0,0,0.55);
+  box-shadow: 0 34px 90px rgba(0,0,0,0.34);
 }
 
-.page-title {
+.page-title{
   margin: 0 0 14px 0;
-  font-size: 2rem;
+  font-size: 2.1rem;
   letter-spacing: -0.02em;
 }
 
-.page-content :is(p, li) {
+.page-content p,
+.page-content li{
   color: var(--muted);
 }
 
-/* Make markdown look nicer */
-.page-content h2, .page-content h3 {
-  color: var(--text);
-  margin-top: 1.6em;
+/* Markdown niceties */
+.page-content h2, .page-content h3{
+  color: var(--ink);
+  margin-top: 1.7em;
 }
 
-.page-content a {
-  color: #8ab4ff;
+.page-content a{
+  color: #111;
   text-decoration: none;
-  border-bottom: 1px solid rgba(138,180,255,0.35);
+  border-bottom: 1px solid rgba(0,0,0,0.25);
 }
 
-.page-content a:hover {
-  border-bottom-color: rgba(138,180,255,0.8);
+.page-content a:hover{
+  border-bottom-color: rgba(0,0,0,0.65);
 }
 
-.page-content pre {
+.page-content pre{
   padding: 14px 16px;
   border-radius: 12px;
   overflow: auto;
-  background: rgba(0,0,0,0.35);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: #f4f6f8;
+  border: 1px solid rgba(0,0,0,0.08);
+  color: #121417;
+}
+
+/* Make sure images don’t overflow the card */
+.page-content img{
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
 }
